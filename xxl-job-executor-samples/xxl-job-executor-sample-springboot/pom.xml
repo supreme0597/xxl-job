@@ -16,6 +16,7 @@
     <url>https://www.xuxueli.com/</url>
 
     <properties>
+        <selenium.version>4.5.0</selenium.version>
     </properties>
 
     <dependencyManagement>
@@ -50,6 +51,49 @@
             <version>${project.parent.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>com.xuxueli</groupId>
+            <artifactId>xxl-crawler</artifactId>
+            <version>1.3.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <artifactId>selenium-java</artifactId>
+            <version>${selenium.version}</version>
+        </dependency>
+        <dependency>
+            <artifactId>selenium-api</artifactId>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <version>${selenium.version}</version>
+        </dependency>
+        <dependency>
+            <artifactId>selenium-chrome-driver</artifactId>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <version>${selenium.version}</version>
+        </dependency>
+        <dependency>
+            <artifactId>selenium-remote-driver</artifactId>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <version>${selenium.version}</version>
+        </dependency>
+        <dependency>
+            <artifactId>selenium-support</artifactId>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <version>${selenium.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+            <version>5.8.10</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.24</version>
+        </dependency>
     </dependencies>
 
     <build>

@@ -1,10 +1,29 @@
 package com.xxl.job.executor.service.jobhandler;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.bean.copier.CopyOptions;
+import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.collection.ListUtil;
+import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
+import com.xuxueli.crawler.XxlCrawler;
+import com.xuxueli.crawler.annotation.PageFieldSelect;
+import com.xuxueli.crawler.annotation.PageSelect;
+import com.xuxueli.crawler.parser.PageParser;
+import com.xxl.crawler.loader.strategy.SeleniumChromePageLoader;
+import com.xxl.crawler.parser.strategy.AbstractLoginPageParser;
 import com.xxl.job.core.context.XxlJobHelper;
+import com.xxl.job.core.glue.CrawlerGlueFactory;
 import com.xxl.job.core.handler.annotation.XxlJob;
+import lombok.Data;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.openqa.selenium.By;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -13,6 +32,8 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -241,6 +262,7 @@ public class SampleXxlJob {
     @XxlJob(value = "demoJobHandler2", init = "init", destroy = "destroy")
     public void demoJobHandler2() throws Exception {
         XxlJobHelper.log("XXL-JOB, Hello World.");
+
     }
     public void init(){
         logger.info("init");
@@ -250,4 +272,178 @@ public class SampleXxlJob {
     }
 
 
+
+    /**
+     * 6、分布式爬虫任务
+     */
+    @XxlJob(value = "crawlerJob")
+    public void crawlerJob() throws Exception {
+        XxlJobHelper.log("XXL-JOB, Hello World.");
+
+        String crawlerJobParamStr = XxlJobHelper.getJobParam();
+        CrawlerJobParam crawlerJobParam = new CrawlerJobParam();
+
+        if (StringUtils.hasLength(crawlerJobParamStr)) {
+            crawlerJobParam = BeanUtil.toBean(JSONUtil.parseObj(crawlerJobParamStr),
+                    CrawlerJobParam.class,
+                    CopyOptions.create().setIgnoreProperties(CrawlerJobParam::getPageParser));
+        }
+
+        logger.info("==={}===", JSONUtil.toJsonStr(crawlerJobParam));
+
+        PageParser pageParser = CrawlerGlueFactory.getInstance()
+                .loadNewInstance(crawlerJobParam.getPageParserCodeSource(), crawlerJobParam.getUrl(), dealSuccess -> {
+                    logger.info("处理结果：{}", dealSuccess);
+                });
+        crawlerJobParam.setPageParser(pageParser);
+
+        String driverPath = "/Users/laiyouxu/Downloads/chromedriver";
+
+        CrawlerJobParam finalCrawlerJobParam = crawlerJobParam;
+        XxlCrawler crawler = new XxlCrawler.Builder()
+                .setUrls(crawlerJobParam.getUrl())
+                .setWhiteUrlRegexs(crawlerJobParam.getWhiteUrlRegexs())
+                .setThreadCount(1)
+                .setPageLoader(new SeleniumChromePageLoader(driverPath, webDriver -> {
+                    if (CollUtil.isNotEmpty(finalCrawlerJobParam.getCrawlerJobClickPathList())) {
+                        finalCrawlerJobParam.getCrawlerJobClickPathList().stream()
+                                .sorted(Comparator.comparingInt(CrawlerJobParam.CrawlerJobClickPath::getSorting))
+                                .forEach(crawlerJobClickPath -> {
+                                    try {
+                                        if (ObjectUtil.isNotNull(crawlerJobClickPath.getDelayingBefore())) {
+                                            Thread.sleep(crawlerJobClickPath.getDelayingBefore());
+                                        }
+                                        if (StrUtil.isNotBlank(crawlerJobClickPath.getCssSelector())) {
+                                            webDriver.findElement(By.cssSelector(crawlerJobClickPath.getCssSelector())).click();
+                                        }
+                                        if (ObjectUtil.isNotNull(crawlerJobClickPath.getDelayingAfter())) {
+                                            Thread.sleep(crawlerJobClickPath.getDelayingAfter());
+                                        }
+                                    } catch (InterruptedException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                });
+                    }
+                }))
+                .setPageParser(crawlerJobParam.getPageParser())
+                .build();
+
+        System.out.println("start");
+        crawler.start(true);
+        System.out.println("end");
+    }
+
+    /**
+     * 分布式爬虫结合定时任务的参数
+     *
+     * @author Supreme
+     * @date 2022/12/25
+     */
+    @Data
+    public static class CrawlerJobParam {
+        /**
+         * 爬取目标url
+         */
+        private String url = "https://gitee.com/xuxueli0323/projects?page=1";
+
+        /**
+         * 爬取目标白名单url
+         */
+        private String whiteUrlRegexs = "https://gitee\\.com/xuxueli0323/projects\\?page=\\d+";
+
+        /**
+         * 爬虫点击事件
+         */
+        private List<CrawlerJobClickPath> crawlerJobClickPathList = ListUtil.of(new CrawlerJobClickPath());
+
+        /**
+         * 页面处理器
+         */
+        private PageParser pageParser;
+
+        /**
+         * 页面处理器 源码字符串
+         */
+        private String pageParserCodeSource =
+                "package com.xxl.job.executor.service.jobhandler;\n" +
+                "import com.xxl.crawler.parser.strategy.AbstractLoginPageParser;\n" +
+                "import com.xuxueli.crawler.annotation.PageFieldSelect;\n" +
+                "import com.xuxueli.crawler.annotation.PageSelect;\n" +
+                "import org.jsoup.nodes.Document;\n" +
+                "import org.jsoup.nodes.Element;\n" +
+                "import java.util.function.Consumer;\n" +
+                "public class TestPageParser extends AbstractLoginPageParser<TestPageVo> {\n" +
+                "    /**\n" +
+                "     * AbstractLoginPageParser\n" +
+                "     *\n" +
+                "     * @param redirectUrl\n" +
+                "     * @param consumer\n" +
+                "     */\n" +
+                "    public TestPageParser(String redirectUrl, Consumer<Boolean> consumer) {\n" +
+                "        super(redirectUrl, consumer);\n" +
+                "    }\n" +
+                "    @Override\n" +
+                "    public Boolean parse(TestPageVo pageVo) {\n" +
+                "        System.out.println(\"=======：\" + pageVo.toString());\n" +
+                "        return Boolean.TRUE;\n" +
+                "    }\n" +
+                "}\n" +
+
+                "@PageSelect(cssQuery = \"#search-projects-ulist .project\")\n" +
+                "public class TestPageVo {\n" +
+                "    @PageFieldSelect(cssQuery = \".repository\")\n" +
+                "    private String repository;\n" +
+                "    @PageFieldSelect(cssQuery = \".description\")\n" +
+                "    private String description;\n" +
+                "    public String getRepository() {\n" +
+                "        return repository;\n" +
+                "    }\n" +
+                "    public void setRepository(String repository) {\n" +
+                "        this.repository = repository;\n" +
+                "    }\n" +
+                "    public String getDescription() {\n" +
+                "        return description;\n" +
+                "    }\n" +
+                "    public void setDescription(String description) {\n" +
+                "        this.description = description;\n" +
+                "    }\n" +
+                "    @Override\n" +
+                "    public String toString() {\n" +
+                "        return \"PageVo{\" +\n" +
+                "                \"repository='\" + repository + '\\'' +\n" +
+                "                \", description='\" + description + '\\'' +\n" +
+                "                '}';\n" +
+                "    }\n" +
+                "}"
+                ;
+
+        /**
+         * 爬虫点击事件
+         *
+         * @author Supreme
+         * @date 2022/12/25
+         */
+        @Data
+        public static class CrawlerJobClickPath {
+            /**
+             * css选择器
+             */
+            private String cssSelector = "#search-projects-ulist";
+
+            /**
+             * 点击前延迟（毫秒）
+             */
+            private Integer delayingBefore = 300;
+
+            /**
+             * 点击后延迟（毫秒）
+             */
+            private Integer delayingAfter = 300;
+
+            /**
+             * 排序，按顺序点击，数值小的在前
+             */
+            private Integer sorting = 1;
+        }
+    }
 }
